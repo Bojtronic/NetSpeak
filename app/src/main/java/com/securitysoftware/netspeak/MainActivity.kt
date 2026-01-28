@@ -31,6 +31,7 @@ import android.content.pm.PackageManager
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import com.securitysoftware.netspeak.data.repository.BranchRepository
+import com.securitysoftware.netspeak.speech.TextToSpeechManager
 
 
 class MainActivity : ComponentActivity() {
@@ -79,6 +80,23 @@ fun formatDevices(devices: List<com.securitysoftware.netspeak.data.model.Device>
     return builder.toString()
 }
 
+fun formatDevicesForSpeech(
+    devices: List<com.securitysoftware.netspeak.data.model.Device>
+): String {
+    if (devices.isEmpty()) {
+        return "No se encontró información para esa sucursal. Intente nuevamente."
+    }
+
+    val builder = StringBuilder()
+
+    devices.forEach { device ->
+        builder.append("${device.name}, dirección IP ${device.ip.replace(".", " punto ")}. ")
+    }
+
+    return builder.toString()
+}
+
+
 
 @OptIn(
     ExperimentalMaterial3Api::class,
@@ -101,6 +119,9 @@ fun NetSpeakMainScreen() {
     val repository = remember {
         BranchRepository(context)
     }
+    val ttsManager = remember {
+        TextToSpeechManager(context)
+    }
     val speechManager = remember {
         SpeechManager(
             context = context,
@@ -110,13 +131,18 @@ fun NetSpeakMainScreen() {
                 val devices = repository.findDevicesByBranchName(text)
 
                 networkResult = formatDevices(devices)
+
+                // 🔊 HABLAR RESULTADO
+                ttsManager.speak(
+                    formatDevicesForSpeech(devices)
+                )
             },
             onError = { error ->
                 networkResult = "Error de reconocimiento. Intente nuevamente."
+                ttsManager.speak("Error de reconocimiento. Intente nuevamente.")
             }
         )
     }
-
 
     Scaffold(
         topBar = {
@@ -231,8 +257,10 @@ fun NetSpeakMainScreen() {
     DisposableEffect(Unit) {
         onDispose {
             speechManager.destroy()
+            ttsManager.shutdown()
         }
     }
+
 }
 
 
