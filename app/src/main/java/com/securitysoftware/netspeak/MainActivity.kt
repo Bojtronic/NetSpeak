@@ -30,8 +30,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
-
-
+import com.securitysoftware.netspeak.data.repository.BranchRepository
 
 
 class MainActivity : ComponentActivity() {
@@ -66,6 +65,21 @@ class MainActivity : ComponentActivity() {
 
 }
 
+fun formatDevices(devices: List<com.securitysoftware.netspeak.data.model.Device>): String {
+    if (devices.isEmpty()) {
+        return "No se encontró información para esa sucursal.\nIntente nuevamente."
+    }
+
+    val builder = StringBuilder()
+
+    devices.forEach { device ->
+        builder.append("${device.name}: ${device.ip}\n")
+    }
+
+    return builder.toString()
+}
+
+
 @OptIn(
     ExperimentalMaterial3Api::class,
     ExperimentalComposeUiApi::class
@@ -84,18 +98,25 @@ fun NetSpeakMainScreen() {
         animationSpec = tween(durationMillis = 150),
         label = "MicScale"
     )
+    val repository = remember {
+        BranchRepository(context)
+    }
     val speechManager = remember {
         SpeechManager(
             context = context,
             onResult = { text ->
                 recognizedText = text
-                networkResult = "Buscando red: $text"
+
+                val devices = repository.findDevicesByBranchName(text)
+
+                networkResult = formatDevices(devices)
             },
             onError = { error ->
-                networkResult = error
+                networkResult = "Error de reconocimiento. Intente nuevamente."
             }
         )
     }
+
 
     Scaffold(
         topBar = {
@@ -157,7 +178,10 @@ fun NetSpeakMainScreen() {
                     .background(Color(0xFFE3F2FD))
                     .padding(12.dp)
             ) {
-                Text(text = networkResult)
+                Text(
+                    text = networkResult,
+                    color = Color.Black
+                )
             }
 
             Spacer(modifier = Modifier.weight(1f))
