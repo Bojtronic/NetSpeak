@@ -1,14 +1,19 @@
 package com.securitysoftware.netspeak.data.repository
 
+import android.content.ContentValues
 import android.content.Context
 import com.securitysoftware.netspeak.data.db.DbContract
 import com.securitysoftware.netspeak.data.db.NetSpeakDatabase
+import com.securitysoftware.netspeak.data.model.Branch
 import com.securitysoftware.netspeak.data.model.Device
 
 class BranchRepository(context: Context) {
 
     private val dbHelper = NetSpeakDatabase(context)
 
+    // =========================
+    // EXISTENTE (NO TOCADO)
+    // =========================
     fun findDevicesByBranchName(spokenText: String): List<Device> {
 
         val devices = mutableListOf<Device>()
@@ -42,5 +47,99 @@ class BranchRepository(context: Context) {
 
         cursor.close()
         return devices
+    }
+
+    // =========================
+    // NUEVO – OBTENER TODAS LAS SUCURSALES
+    // =========================
+    fun getAllBranches(): List<Branch> {
+
+        val branches = mutableListOf<Branch>()
+        val db = dbHelper.readableDatabase
+
+        val cursor = db.query(
+            DbContract.BranchTable.TABLE,
+            arrayOf(
+                DbContract.BranchTable.ID,
+                DbContract.BranchTable.NAME
+            ),
+            null,
+            null,
+            null,
+            null,
+            DbContract.BranchTable.NAME
+        )
+
+        while (cursor.moveToNext()) {
+            branches.add(
+                Branch(
+                    id = cursor.getInt(0),
+                    name = cursor.getString(1)
+                )
+            )
+        }
+
+        cursor.close()
+        return branches
+    }
+
+    // =========================
+    // NUEVO – AGREGAR SUCURSAL
+    // =========================
+    fun addBranch(name: String): Long {
+
+        val db = dbHelper.writableDatabase
+
+        val values = ContentValues().apply {
+            put(DbContract.BranchTable.NAME, name)
+        }
+
+        return db.insert(
+            DbContract.BranchTable.TABLE,
+            null,
+            values
+        )
+    }
+
+    // =========================
+    // NUEVO – ACTUALIZAR SUCURSAL
+    // =========================
+    fun updateBranch(branchId: Int, newName: String): Int {
+
+        val db = dbHelper.writableDatabase
+
+        val values = ContentValues().apply {
+            put(DbContract.BranchTable.NAME, newName)
+        }
+
+        return db.update(
+            DbContract.BranchTable.TABLE,
+            values,
+            "${DbContract.BranchTable.ID} = ?",
+            arrayOf(branchId.toString())
+        )
+    }
+
+    // =========================
+    // NUEVO – ELIMINAR SUCURSAL
+    // (borra también dispositivos asociados)
+    // =========================
+    fun deleteBranch(branchId: Int) {
+
+        val db = dbHelper.writableDatabase
+
+        // Primero eliminar dispositivos
+        db.delete(
+            DbContract.DeviceTable.TABLE,
+            "${DbContract.DeviceTable.BRANCH_ID} = ?",
+            arrayOf(branchId.toString())
+        )
+
+        // Luego la sucursal
+        db.delete(
+            DbContract.BranchTable.TABLE,
+            "${DbContract.BranchTable.ID} = ?",
+            arrayOf(branchId.toString())
+        )
     }
 }
