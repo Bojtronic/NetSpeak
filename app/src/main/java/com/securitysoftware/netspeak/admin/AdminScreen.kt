@@ -10,10 +10,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.securitysoftware.netspeak.MainActivity
+import com.securitysoftware.netspeak.data.export.DbExporter
+import com.securitysoftware.netspeak.data.export.DbImporter
 import com.securitysoftware.netspeak.data.model.Branch
 import com.securitysoftware.netspeak.data.model.Device
 import com.securitysoftware.netspeak.data.model.DeviceType
 import com.securitysoftware.netspeak.data.repository.BranchRepository
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.FileProvider
+import androidx.activity.compose.rememberLauncherForActivityResult
+
 
 
 
@@ -30,16 +38,41 @@ fun AdminScreen() {
     var selectedDevice by remember { mutableStateOf<Device?>(null) }
     var showAddDeviceDialog by remember { mutableStateOf(false) }
     var showEditDeviceDialog by remember { mutableStateOf(false) }
+    var exportedFile by remember { mutableStateOf<java.io.File?>(null) }
 
     val deviceTypes = listOf(
         DeviceType(1, "DVR"),
         DeviceType(2, "PANEL"),
         DeviceType(3, "ACCESO")
     )
-
-
+    var showExportDialog by remember { mutableStateOf(false) }
     var showAddBranchDialog by remember { mutableStateOf(false) }
     var showEditBranchDialog by remember { mutableStateOf(false) }
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        uri?.let {
+            DbExporter(context).exportToUri(it)
+
+            Toast.makeText(
+                context,
+                "Archivo guardado en Descargas",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            DbImporter(context).importFromUri(uri)
+            branches = repository.getAllBranches()
+            selectedBranch = null
+            devices = emptyList()
+        }
+    }
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -61,11 +94,101 @@ fun AdminScreen() {
         }
     }
 
+    Spacer(modifier = Modifier.height(12.dp))
+
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 48.dp, start = 16.dp, end = 16.dp, bottom = 16.dp)
+    ) {
+
+        Button(
+            modifier = Modifier.weight(1f),
+            onClick = {
+                showExportDialog = true
+            }
+        ) {
+            Text("Exportar DB")
+        }
+
+        if (showExportDialog) {
+            AlertDialog(
+                onDismissRequest = { showExportDialog = false },
+                title = { Text("Exportar base de datos") },
+                text = { Text("¿Qué deseas hacer con el archivo?") },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showExportDialog = false
+
+                            // 👉 COMPARTIR
+                            val file = DbExporter(context).exportToJson()
+
+                            val uri = FileProvider.getUriForFile(
+                                context,
+                                "${context.packageName}.provider",
+                                file
+                            )
+
+                            val intent = Intent(Intent.ACTION_SEND).apply {
+                                type = "application/json"
+                                putExtra(Intent.EXTRA_STREAM, uri)
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+
+                            context.startActivity(
+                                Intent.createChooser(intent, "Compartir base de datos")
+                            )
+                        }
+                    ) {
+                        Text("Compartir")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            showExportDialog = false
+
+                            // 👉 GUARDAR EN DESCARGAS
+                            exportLauncher.launch("netspeak_backup.json")
+                        }
+                    ) {
+                        Text("Guardar en el dispositivo")
+                    }
+                }
+            )
+        }
+
+
+
+        val launcher = rememberLauncherForActivityResult(
+            ActivityResultContracts.OpenDocument()
+        ) { uri ->
+            if (uri != null) {
+                val success = DbImporter(context).importFromUri(uri)
+                if (success) {
+                    branches = repository.getAllBranches()
+                    selectedBranch = null
+                    devices = emptyList()
+                }
+            }
+        }
+
+        Button(
+            modifier = Modifier.weight(1f),
+            onClick = {
+                launcher.launch(arrayOf("application/json"))
+            }
+        ) {
+            Text("Importar DB")
+        }
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(top = 48.dp, start = 16.dp, end = 16.dp, bottom = 16.dp)
+            .padding(top = 96.dp, start = 16.dp, end = 16.dp, bottom = 16.dp)
     ) {
 
         Text(
