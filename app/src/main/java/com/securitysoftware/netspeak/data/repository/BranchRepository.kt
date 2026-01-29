@@ -142,4 +142,97 @@ class BranchRepository(context: Context) {
             arrayOf(branchId.toString())
         )
     }
+
+    fun getDevicesByBranch(branchId: Int): List<Device> {
+
+        val devices = mutableListOf<Device>()
+        val db = dbHelper.readableDatabase
+
+        val cursor = db.rawQuery(
+            """
+        SELECT d.${DbContract.DeviceTable.ID},
+               d.${DbContract.DeviceTable.NAME},
+               d.${DbContract.DeviceTable.IP},
+               t.${DbContract.DeviceTypeTable.NAME}
+        FROM ${DbContract.DeviceTable.TABLE} d
+        JOIN ${DbContract.DeviceTypeTable.TABLE} t
+          ON d.${DbContract.DeviceTable.TYPE_ID} = t.${DbContract.DeviceTypeTable.ID}
+        WHERE d.${DbContract.DeviceTable.BRANCH_ID} = ?
+        """,
+            arrayOf(branchId.toString())
+        )
+
+        while (cursor.moveToNext()) {
+            devices.add(
+                Device(
+                    id = cursor.getInt(0),
+                    branchId = branchId,
+                    name = cursor.getString(1),
+                    ip = cursor.getString(2),
+                    type = cursor.getString(3)
+                )
+            )
+        }
+
+        cursor.close()
+        return devices
+    }
+
+    fun addDevice(
+        branchId: Int,
+        name: String,
+        ip: String,
+        typeId: Int
+    ): Long {
+
+        val db = dbHelper.writableDatabase
+
+        val values = ContentValues().apply {
+            put(DbContract.DeviceTable.BRANCH_ID, branchId)
+            put(DbContract.DeviceTable.NAME, name)
+            put(DbContract.DeviceTable.IP, ip)
+            put(DbContract.DeviceTable.TYPE_ID, typeId)
+        }
+
+        return db.insert(
+            DbContract.DeviceTable.TABLE,
+            null,
+            values
+        )
+    }
+
+    fun updateDevice(
+        deviceId: Int,
+        name: String,
+        ip: String,
+        typeId: Int
+    ): Int {
+
+        val db = dbHelper.writableDatabase
+
+        val values = ContentValues().apply {
+            put(DbContract.DeviceTable.NAME, name)
+            put(DbContract.DeviceTable.IP, ip)
+            put(DbContract.DeviceTable.TYPE_ID, typeId)
+        }
+
+        return db.update(
+            DbContract.DeviceTable.TABLE,
+            values,
+            "${DbContract.DeviceTable.ID} = ?",
+            arrayOf(deviceId.toString())
+        )
+    }
+
+    fun deleteDevice(deviceId: Int) {
+
+        val db = dbHelper.writableDatabase
+
+        db.delete(
+            DbContract.DeviceTable.TABLE,
+            "${DbContract.DeviceTable.ID} = ?",
+            arrayOf(deviceId.toString())
+        )
+    }
+
 }
