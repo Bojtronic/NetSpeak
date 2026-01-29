@@ -1,5 +1,6 @@
 package com.securitysoftware.netspeak.admin
 
+import android.content.Intent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -8,6 +9,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.securitysoftware.netspeak.MainActivity
 import com.securitysoftware.netspeak.data.model.Branch
 import com.securitysoftware.netspeak.data.model.Device
 import com.securitysoftware.netspeak.data.model.DeviceType
@@ -32,17 +34,38 @@ fun AdminScreen() {
     val deviceTypes = listOf(
         DeviceType(1, "DVR"),
         DeviceType(2, "PANEL"),
-        DeviceType(3, "ACCESS")
+        DeviceType(3, "ACCESO")
     )
 
 
     var showAddBranchDialog by remember { mutableStateOf(false) }
     var showEditBranchDialog by remember { mutableStateOf(false) }
 
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.End
+    ) {
+        Button(
+            onClick = {
+                val intent = Intent(context, MainActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                            Intent.FLAG_ACTIVITY_CLEAR_TASK
+                }
+                context.startActivity(intent)
+            },
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.error
+            )
+        ) {
+            Text("Cerrar sesión")
+        }
+    }
+
+
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .padding(top = 48.dp, start = 16.dp, end = 16.dp, bottom = 16.dp)
     ) {
 
         Text(

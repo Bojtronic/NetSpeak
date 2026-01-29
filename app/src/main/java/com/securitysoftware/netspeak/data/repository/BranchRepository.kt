@@ -12,7 +12,7 @@ class BranchRepository(context: Context) {
     private val dbHelper = NetSpeakDatabase(context)
 
     // =========================
-    // EXISTENTE (NO TOCADO)
+    // ENCONTRAR DISPOSITIVOS POR SUCURSAL
     // =========================
     fun findDevicesByBranchName(spokenText: String): List<Device> {
 
@@ -50,7 +50,7 @@ class BranchRepository(context: Context) {
     }
 
     // =========================
-    // NUEVO – OBTENER TODAS LAS SUCURSALES
+    // OBTENER TODAS LAS SUCURSALES
     // =========================
     fun getAllBranches(): List<Branch> {
 
@@ -84,7 +84,7 @@ class BranchRepository(context: Context) {
     }
 
     // =========================
-    // NUEVO – AGREGAR SUCURSAL
+    // AGREGAR SUCURSAL
     // =========================
     fun addBranch(name: String): Long {
 
@@ -102,7 +102,7 @@ class BranchRepository(context: Context) {
     }
 
     // =========================
-    // NUEVO – ACTUALIZAR SUCURSAL
+    // ACTUALIZAR SUCURSAL
     // =========================
     fun updateBranch(branchId: Int, newName: String): Int {
 
@@ -121,7 +121,7 @@ class BranchRepository(context: Context) {
     }
 
     // =========================
-    // NUEVO – ELIMINAR SUCURSAL
+    // ELIMINAR SUCURSAL
     // (borra también dispositivos asociados)
     // =========================
     fun deleteBranch(branchId: Int) {

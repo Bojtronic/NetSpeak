@@ -40,8 +40,6 @@ class NetSpeakDatabase(context: Context) :
                 ${DbContract.DeviceTable.IP} TEXT
             )
         """)
-
-        seedInitialData(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -51,25 +49,4 @@ class NetSpeakDatabase(context: Context) :
         onCreate(db)
     }
 
-    private fun seedInitialData(db: SQLiteDatabase) {
-
-        // Device Types
-        db.execSQL("INSERT INTO device_types VALUES (1, 'DVR')")
-        db.execSQL("INSERT INTO device_types VALUES (2, 'PANEL')")
-        db.execSQL("INSERT INTO device_types VALUES (3, 'ACCESS')")
-
-        // Branch
-        db.execSQL("INSERT INTO branches (name) VALUES ('Sucursal 1')")
-
-        // Devices
-        db.execSQL("""
-            INSERT INTO devices (branch_id, type_id, name, ip) VALUES
-            (1, 1, 'Grabador 1', '192.168.100.1'),
-            (1, 1, 'Grabador 2', '192.168.100.5'),
-            (1, 2, 'Panel Alarma', '192.168.100.3'),
-            (1, 3, 'Acceso 1', '192.168.100.8'),
-            (1, 3, 'Acceso 2', '192.168.100.9'),
-            (1, 3, 'Acceso 3', '192.168.100.10')
-        """)
-    }
 }
