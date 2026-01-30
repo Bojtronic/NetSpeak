@@ -21,7 +21,11 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
 import androidx.activity.compose.rememberLauncherForActivityResult
-
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.sp
 
 
 
@@ -40,14 +44,19 @@ fun AdminScreen() {
     var showEditDeviceDialog by remember { mutableStateOf(false) }
     var exportedFile by remember { mutableStateOf<java.io.File?>(null) }
 
-    val deviceTypes = listOf(
-        DeviceType(1, "DVR"),
-        DeviceType(2, "PANEL"),
-        DeviceType(3, "ACCESO")
-    )
+    var deviceTypes by remember { mutableStateOf<List<DeviceType>>(emptyList()) }
+
     var showExportDialog by remember { mutableStateOf(false) }
     var showAddBranchDialog by remember { mutableStateOf(false) }
     var showEditBranchDialog by remember { mutableStateOf(false) }
+
+
+    var selectedDeviceType by remember { mutableStateOf<DeviceType?>(null) }
+    var showAddDeviceTypeDialog by remember { mutableStateOf(false) }
+    var showEditDeviceTypeDialog by remember { mutableStateOf(false) }
+    var showDeleteDeviceTypeConfirm by remember { mutableStateOf(false) }
+
+    val cardHeight = 260.dp
 
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
@@ -73,6 +82,11 @@ fun AdminScreen() {
             devices = emptyList()
         }
     }
+
+    LaunchedEffect(Unit) {
+        deviceTypes = repository.getAllDeviceTypes()
+    }
+
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -191,28 +205,68 @@ fun AdminScreen() {
             .padding(top = 96.dp, start = 16.dp, end = 16.dp, bottom = 16.dp)
     ) {
 
-        Text(
-            text = "Administración de Sucursales",
-            style = MaterialTheme.typography.titleLarge
-        )
-
         Spacer(modifier = Modifier.height(16.dp))
 
-        LazyColumn(
-            modifier = Modifier.weight(1f)
+        // 🔽 FILA PRINCIPAL
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            items(branches) { branch ->
-                BranchItem(
-                    branch = branch,
-                    isSelected = false,
-                    onClick = {
-                        selectedBranch = branch
-                        devices = repository.getDevicesByBranch(branch.id)
+
+            // 🟦 TIPOS DE DISPOSITIVO
+            Card(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(cardHeight),
+                elevation = CardDefaults.cardElevation(2.dp)
+            ) {
+                Column(Modifier.padding(12.dp)) {
+                    Text("Tipos de Dispositivo", style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(8.dp))
+
+                    LazyColumn(
+                        modifier = Modifier.fillMaxHeight()
+                    ) {
+                        items(deviceTypes) { type ->
+                            ListItem(
+                                headlineContent = { Text(type.name) },
+                                modifier = Modifier.clickable { selectedDeviceType = type }
+                            )
+                        }
                     }
-                )
+                }
+            }
+
+            // 🟩 SUCURSALES
+            Card(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(cardHeight),
+                elevation = CardDefaults.cardElevation(2.dp)
+            ) {
+                Column(Modifier.padding(12.dp)) {
+                    Text("Sucursales", style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(8.dp))
+
+                    LazyColumn(
+                        modifier = Modifier.fillMaxHeight()
+                    ) {
+                        items(branches) { branch ->
+                            BranchItem(
+                                branch = branch,
+                                isSelected = branch.id == selectedBranch?.id,
+                                onClick = {
+                                    selectedBranch = branch
+                                    devices = repository.getDevicesByBranch(branch.id)
+                                }
+                            )
+                        }
+                    }
+                }
             }
         }
 
+        // 🔽 DISPOSITIVOS DE LA SUCURSAL
         if (selectedBranch != null) {
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -222,20 +276,89 @@ fun AdminScreen() {
                 style = MaterialTheme.typography.titleMedium
             )
 
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(200.dp)
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                elevation = CardDefaults.cardElevation(2.dp)
             ) {
-                items(devices) { device ->
-                    DeviceItem(
-                        device = device,
-                        isSelected = device.id == selectedDevice?.id,
-                        onClick = { selectedDevice = device }
-                    )
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(100.dp)
+                        .padding(8.dp)
+                ) {
+                    items(devices) { device ->
+                        DeviceItem(
+                            device = device,
+                            isSelected = device.id == selectedDevice?.id,
+                            onClick = { selectedDevice = device }
+                        )
+                    }
                 }
             }
         }
+
+
+
+    Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+
+
+            Button(
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(
+                    horizontal = 10.dp,
+                    vertical = 4.dp
+                ),
+                onClick = { showAddDeviceTypeDialog = true }
+            ) {
+                Text(
+                    text = "Agregar Tipo",
+                    fontSize = 12.sp,
+                    maxLines = 2,
+                    softWrap = false,
+                    overflow = TextOverflow.Clip
+                )
+            }
+
+            Button(
+                modifier = Modifier.weight(1f),
+                enabled = selectedDeviceType != null,
+                onClick = { showEditDeviceTypeDialog = true }
+            ) {
+                Text("Editar Tipo")
+            }
+
+            Button(
+                modifier = Modifier.weight(1f),
+                enabled = selectedDeviceType != null,
+                onClick = { showDeleteDeviceTypeConfirm = true }
+            ) {
+                Text("Eliminar Tipo")
+            }
+        }
+
+        if (showAddDeviceTypeDialog) {
+            DeviceTypeDialog(
+                title = "Agregar tipo de dispositivo",
+                onConfirm = { name ->
+                    repository.addDeviceType(name)
+
+                    // 🔁 refrescar lista
+                    deviceTypes = repository.getAllDeviceTypes()
+
+                    showAddDeviceTypeDialog = false
+                },
+                onDismiss = {
+                    showAddDeviceTypeDialog = false
+                }
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
 
         Row(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -246,7 +369,15 @@ fun AdminScreen() {
                 modifier = Modifier.weight(1f),
                 enabled = selectedBranch != null,
                 onClick = {
-                    showAddDeviceDialog = true
+                    if (deviceTypes.isEmpty()) {
+                        Toast.makeText(
+                            context,
+                            "Primero debes crear un tipo de dispositivo",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    } else {
+                        showAddDeviceDialog = true
+                    }
                 }
             ) {
                 Text("Agregar Device")

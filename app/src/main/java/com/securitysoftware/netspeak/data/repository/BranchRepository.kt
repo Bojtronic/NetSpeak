@@ -6,6 +6,7 @@ import com.securitysoftware.netspeak.data.db.DbContract
 import com.securitysoftware.netspeak.data.db.NetSpeakDatabase
 import com.securitysoftware.netspeak.data.model.Branch
 import com.securitysoftware.netspeak.data.model.Device
+import com.securitysoftware.netspeak.data.model.DeviceType
 
 class BranchRepository(context: Context) {
 
@@ -234,5 +235,65 @@ class BranchRepository(context: Context) {
             arrayOf(deviceId.toString())
         )
     }
+
+    // DEVICE TYPES
+
+    fun getAllDeviceTypes(): List<DeviceType> {
+        val list = mutableListOf<DeviceType>()
+        val db = dbHelper.readableDatabase
+
+        val cursor = db.query(
+            DbContract.DeviceTypeTable.TABLE,
+            null, null, null, null, null, null
+        )
+
+        while (cursor.moveToNext()) {
+            list.add(
+                DeviceType(
+                    id = cursor.getInt(
+                        cursor.getColumnIndexOrThrow(DbContract.DeviceTypeTable.ID)
+                    ),
+                    name = cursor.getString(
+                        cursor.getColumnIndexOrThrow(DbContract.DeviceTypeTable.NAME)
+                    )
+                )
+            )
+        }
+
+        cursor.close()
+        return list
+    }
+
+    fun addDeviceType(name: String) {
+        val db = dbHelper.writableDatabase
+        val values = android.content.ContentValues().apply {
+            put(DbContract.DeviceTypeTable.NAME, name)
+        }
+        db.insert(DbContract.DeviceTypeTable.TABLE, null, values)
+    }
+
+    fun updateDeviceType(id: Int, name: String) {
+        val db = dbHelper.writableDatabase
+        val values = android.content.ContentValues().apply {
+            put(DbContract.DeviceTypeTable.NAME, name)
+        }
+        db.update(
+            DbContract.DeviceTypeTable.TABLE,
+            values,
+            "${DbContract.DeviceTypeTable.ID} = ?",
+            arrayOf(id.toString())
+        )
+    }
+
+    fun deleteDeviceType(id: Int) {
+        val db = dbHelper.writableDatabase
+        db.delete(
+            DbContract.DeviceTypeTable.TABLE,
+            "${DbContract.DeviceTypeTable.ID} = ?",
+            arrayOf(id.toString())
+        )
+    }
+
+
 
 }

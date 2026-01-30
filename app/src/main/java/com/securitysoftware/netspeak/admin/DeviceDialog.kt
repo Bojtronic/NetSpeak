@@ -22,6 +22,21 @@ fun DeviceDialog(
     var ip by remember { mutableStateOf(device?.ip ?: "") }
 
     var expanded by remember { mutableStateOf(false) }
+
+    if (deviceTypes.isEmpty()) {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text("No hay tipos de dispositivo") },
+            text = { Text("Debes crear al menos un tipo antes de agregar un dispositivo.") },
+            confirmButton = {
+                TextButton(onClick = onDismiss) {
+                    Text("Aceptar")
+                }
+            }
+        )
+        return
+    }
+
     var selectedType by remember {
         mutableStateOf(
             deviceTypes.firstOrNull { it.name == device?.type }

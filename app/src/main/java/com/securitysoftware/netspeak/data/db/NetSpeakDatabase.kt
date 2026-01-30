@@ -40,6 +40,8 @@ class NetSpeakDatabase(context: Context) :
                 ${DbContract.DeviceTable.IP} TEXT
             )
         """)
+
+        insertDeviceType(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -47,6 +49,14 @@ class NetSpeakDatabase(context: Context) :
         db.execSQL("DROP TABLE IF EXISTS ${DbContract.DeviceTypeTable.TABLE}")
         db.execSQL("DROP TABLE IF EXISTS ${DbContract.BranchTable.TABLE}")
         onCreate(db)
+    }
+
+    private fun insertDeviceType(db: SQLiteDatabase) {
+
+        // Device Types
+        db.execSQL("INSERT INTO device_types VALUES (1, 'DVR')")
+        db.execSQL("INSERT INTO device_types VALUES (2, 'ALARMA')")
+        db.execSQL("INSERT INTO device_types VALUES (3, 'ACCESO')")
     }
 
 }
