@@ -30,8 +30,10 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
-
-
+import com.securitysoftware.netspeak.data.repository.BranchRepository
+import com.securitysoftware.netspeak.login.LoginActivity
+import com.securitysoftware.netspeak.sound.MicSoundPlayer
+import com.securitysoftware.netspeak.speech.TextToSpeechManager
 
 
 class MainActivity : ComponentActivity() {
@@ -66,6 +68,38 @@ class MainActivity : ComponentActivity() {
 
 }
 
+fun formatDevices(devices: List<com.securitysoftware.netspeak.data.model.Device>): String {
+    if (devices.isEmpty()) {
+        return "No se encontró información para esa sucursal.\nIntente nuevamente."
+    }
+
+    val builder = StringBuilder()
+
+    devices.forEach { device ->
+        builder.append("${device.name}: ${device.ip}\n")
+    }
+
+    return builder.toString()
+}
+
+fun formatDevicesForSpeech(
+    devices: List<com.securitysoftware.netspeak.data.model.Device>
+): String {
+    if (devices.isEmpty()) {
+        return "No se encontró información para esa sucursal. Intente nuevamente."
+    }
+
+    val builder = StringBuilder()
+
+    devices.forEach { device ->
+        builder.append("${device.name}, dirección IP ${device.ip.replace(".", " punto ")}. ")
+    }
+
+    return builder.toString()
+}
+
+
+
 @OptIn(
     ExperimentalMaterial3Api::class,
     ExperimentalComposeUiApi::class
@@ -84,17 +118,36 @@ fun NetSpeakMainScreen() {
         animationSpec = tween(durationMillis = 150),
         label = "MicScale"
     )
+    val repository = remember {
+        BranchRepository(context)
+    }
+    val ttsManager = remember {
+        TextToSpeechManager(context)
+    }
     val speechManager = remember {
         SpeechManager(
             context = context,
             onResult = { text ->
                 recognizedText = text
-                networkResult = "Buscando red: $text"
+
+                val devices = repository.findDevicesByBranchName(text)
+
+                networkResult = formatDevices(devices)
+
+                // 🔊 HABLAR RESULTADO
+                ttsManager.speak(
+                    formatDevicesForSpeech(devices)
+                )
             },
             onError = { error ->
-                networkResult = error
+                networkResult = "Error de reconocimiento. Intente nuevamente."
+                ttsManager.speak("Error de reconocimiento. Intente nuevamente.")
             }
         )
+    }
+
+    val micSoundPlayer = remember {
+        MicSoundPlayer(context)
     }
 
     Scaffold(
@@ -157,7 +210,10 @@ fun NetSpeakMainScreen() {
                     .background(Color(0xFFE3F2FD))
                     .padding(12.dp)
             ) {
-                Text(text = networkResult)
+                Text(
+                    text = networkResult,
+                    color = Color.Black
+                )
             }
 
             Spacer(modifier = Modifier.weight(1f))
@@ -171,9 +227,11 @@ fun NetSpeakMainScreen() {
                     }
                     .pointerInteropFilter { event ->
                         when (event.action) {
+
                             MotionEvent.ACTION_DOWN -> {
                                 isListening = true
                                 networkResult = "Escuchando..."
+                                micSoundPlayer.playMicOn()
                                 speechManager.startListening()
                                 true
                             }
@@ -181,6 +239,7 @@ fun NetSpeakMainScreen() {
                             MotionEvent.ACTION_UP,
                             MotionEvent.ACTION_CANCEL -> {
                                 isListening = false
+                                micSoundPlayer.playMicOff()
                                 speechManager.stopListening()
                                 true
                             }
@@ -188,8 +247,11 @@ fun NetSpeakMainScreen() {
                             else -> false
                         }
                     },
-                containerColor = if (isListening) Color.Red else MaterialTheme.colorScheme.primary,
-                onClick = {}
+                containerColor = if (isListening)
+                    Color.Red
+                else
+                    MaterialTheme.colorScheme.primary,
+                onClick = {} // obligatorio pero vacío
             ) {
                 Icon(
                     imageVector = Icons.Default.Mic,
@@ -199,7 +261,6 @@ fun NetSpeakMainScreen() {
                 )
             }
 
-
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
@@ -207,8 +268,11 @@ fun NetSpeakMainScreen() {
     DisposableEffect(Unit) {
         onDispose {
             speechManager.destroy()
+            ttsManager.shutdown()
+            micSoundPlayer.release()
         }
     }
+
 }
 
 
