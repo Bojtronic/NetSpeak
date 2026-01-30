@@ -24,46 +24,64 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.Alignment
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Logout
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+
+
 
 
 
 @Composable
 fun AdminScreen() {
 
+    // ─────────────────────────────────────────
+    // CONTEXT & REPOSITORY
+    // ─────────────────────────────────────────
     val context = LocalContext.current
     val repository = remember { BranchRepository(context) }
 
+    // ─────────────────────────────────────────
+    // STATE
+    // ─────────────────────────────────────────
     var branches by remember { mutableStateOf(repository.getAllBranches()) }
     var selectedBranch by remember { mutableStateOf<Branch?>(null) }
     var showConfirmDelete by remember { mutableStateOf(false) }
+
     var devices by remember { mutableStateOf<List<Device>>(emptyList()) }
     var selectedDevice by remember { mutableStateOf<Device?>(null) }
     var showAddDeviceDialog by remember { mutableStateOf(false) }
     var showEditDeviceDialog by remember { mutableStateOf(false) }
-    var exportedFile by remember { mutableStateOf<java.io.File?>(null) }
 
     var deviceTypes by remember { mutableStateOf<List<DeviceType>>(emptyList()) }
-
-    var showExportDialog by remember { mutableStateOf(false) }
-    var showAddBranchDialog by remember { mutableStateOf(false) }
-    var showEditBranchDialog by remember { mutableStateOf(false) }
-
-
     var selectedDeviceType by remember { mutableStateOf<DeviceType?>(null) }
     var showAddDeviceTypeDialog by remember { mutableStateOf(false) }
     var showEditDeviceTypeDialog by remember { mutableStateOf(false) }
     var showDeleteDeviceTypeConfirm by remember { mutableStateOf(false) }
 
+    var showExportDialog by remember { mutableStateOf(false) }
+    var showAddBranchDialog by remember { mutableStateOf(false) }
+    var showEditBranchDialog by remember { mutableStateOf(false) }
+    var showDeleteDeviceConfirm by remember { mutableStateOf(false) }
+
+    var exportedFile by remember { mutableStateOf<java.io.File?>(null) }
+
     val cardHeight = 260.dp
 
+    // ─────────────────────────────────────────
+    // LAUNCHERS & EFFECTS
+    // ─────────────────────────────────────────
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
         uri?.let {
             DbExporter(context).exportToUri(it)
-
             Toast.makeText(
                 context,
                 "Archivo guardado en Descargas",
@@ -87,29 +105,35 @@ fun AdminScreen() {
         deviceTypes = repository.getAllDeviceTypes()
     }
 
-
+    // ─────────────────────────────────────────
+    // TOP ACTIONS (Cerrar sesión)
+    // ─────────────────────────────────────────
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.End
     ) {
-        Button(
+        IconButton(
             onClick = {
                 val intent = Intent(context, MainActivity::class.java).apply {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or
                             Intent.FLAG_ACTIVITY_CLEAR_TASK
                 }
                 context.startActivity(intent)
-            },
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.error
-            )
+            }
         ) {
-            Text("Cerrar sesión")
+            Icon(
+                imageVector = Icons.Default.Logout,
+                contentDescription = "Cerrar sesión",
+                tint = MaterialTheme.colorScheme.error
+            )
         }
     }
 
     Spacer(modifier = Modifier.height(12.dp))
 
+    // ─────────────────────────────────────────
+    // TOP ACTIONS (Importar / Exportar DB)
+    // ─────────────────────────────────────────
     Row(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier
@@ -119,9 +143,7 @@ fun AdminScreen() {
 
         Button(
             modifier = Modifier.weight(1f),
-            onClick = {
-                showExportDialog = true
-            }
+            onClick = { showExportDialog = true }
         ) {
             Text("Exportar DB")
         }
@@ -135,70 +157,45 @@ fun AdminScreen() {
                     TextButton(
                         onClick = {
                             showExportDialog = false
-
-                            // 👉 COMPARTIR
                             val file = DbExporter(context).exportToJson()
-
                             val uri = FileProvider.getUriForFile(
                                 context,
                                 "${context.packageName}.provider",
                                 file
                             )
-
                             val intent = Intent(Intent.ACTION_SEND).apply {
                                 type = "application/json"
                                 putExtra(Intent.EXTRA_STREAM, uri)
                                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                             }
-
                             context.startActivity(
                                 Intent.createChooser(intent, "Compartir base de datos")
                             )
                         }
-                    ) {
-                        Text("Compartir")
-                    }
+                    ) { Text("Compartir") }
                 },
                 dismissButton = {
                     TextButton(
                         onClick = {
                             showExportDialog = false
-
-                            // 👉 GUARDAR EN DESCARGAS
                             exportLauncher.launch("netspeak_backup.json")
                         }
-                    ) {
-                        Text("Guardar en el dispositivo")
-                    }
+                    ) { Text("Guardar en el dispositivo") }
                 }
             )
         }
 
-
-
-        val launcher = rememberLauncherForActivityResult(
-            ActivityResultContracts.OpenDocument()
-        ) { uri ->
-            if (uri != null) {
-                val success = DbImporter(context).importFromUri(uri)
-                if (success) {
-                    branches = repository.getAllBranches()
-                    selectedBranch = null
-                    devices = emptyList()
-                }
-            }
-        }
-
         Button(
             modifier = Modifier.weight(1f),
-            onClick = {
-                launcher.launch(arrayOf("application/json"))
-            }
+            onClick = { importLauncher.launch(arrayOf("application/json")) }
         ) {
             Text("Importar DB")
         }
     }
 
+    // ─────────────────────────────────────────
+    // MAIN CONTENT (Cards, Lists)
+    // ─────────────────────────────────────────
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -221,36 +218,47 @@ fun AdminScreen() {
                 elevation = CardDefaults.cardElevation(2.dp)
             ) {
                 Column(Modifier.padding(12.dp)) {
-                    Text("Tipos de Dispositivo", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        text = "Tipos de Dispositivo",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    )
+
                     Spacer(Modifier.height(8.dp))
 
-                    LazyColumn(
-                        modifier = Modifier.fillMaxHeight()
-                    ) {
+                    LazyColumn(Modifier.fillMaxHeight()) {
                         items(deviceTypes) { type ->
-                            ListItem(
-                                headlineContent = { Text(type.name) },
-                                modifier = Modifier.clickable { selectedDeviceType = type }
+                            DeviceTypeItem(
+                                deviceType = type,
+                                isSelected = type.id == selectedDeviceType?.id,
+                                onClick = {
+                                    selectedDeviceType = type
+                                }
                             )
                         }
                     }
                 }
             }
 
+
             // 🟩 SUCURSALES
             Card(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(cardHeight),
+                modifier = Modifier.weight(1f).height(cardHeight),
                 elevation = CardDefaults.cardElevation(2.dp)
             ) {
                 Column(Modifier.padding(12.dp)) {
-                    Text("Sucursales", style = MaterialTheme.typography.titleMedium)
-                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "Sucursales",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    )
 
-                    LazyColumn(
-                        modifier = Modifier.fillMaxHeight()
-                    ) {
+                    Spacer(Modifier.height(8.dp))
+                    LazyColumn(Modifier.fillMaxHeight()) {
                         items(branches) { branch ->
                             BranchItem(
                                 branch = branch,
@@ -266,22 +274,39 @@ fun AdminScreen() {
             }
         }
 
-        // 🔽 DISPOSITIVOS DE LA SUCURSAL
-        if (selectedBranch != null) {
+        // 🔽 DISPOSITIVOS
+        Spacer(Modifier.height(16.dp))
 
-            Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = if (selectedBranch != null)
+                "Dispositivos – ${selectedBranch!!.name}"
+            else
+                "Dispositivos",
+            style = MaterialTheme.typography.titleMedium
+        )
 
-            Text(
-                text = "Dispositivos – ${selectedBranch!!.name}",
-                style = MaterialTheme.typography.titleMedium
-            )
+        Spacer(Modifier.height(8.dp))
 
-            Spacer(modifier = Modifier.height(8.dp))
+        Card(elevation = CardDefaults.cardElevation(2.dp)) {
 
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                elevation = CardDefaults.cardElevation(2.dp)
-            ) {
+            if (selectedBranch == null) {
+
+                // 💤 Estado vacío
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(100.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Selecciona una sucursal para ver los dispositivos",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+            } else {
+
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -299,14 +324,15 @@ fun AdminScreen() {
             }
         }
 
+        Spacer(modifier = Modifier.height(12.dp))
 
-
-    Row(
+        // ─────────────────────────────────────────
+        // ACTION BUTTONS (CRUD)
+        // ─────────────────────────────────────────
+        Row(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-
-
             Button(
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(
@@ -318,7 +344,7 @@ fun AdminScreen() {
                 Text(
                     text = "Agregar Tipo",
                     fontSize = 12.sp,
-                    maxLines = 2,
+                    maxLines = 1,
                     softWrap = false,
                     overflow = TextOverflow.Clip
                 )
@@ -326,36 +352,37 @@ fun AdminScreen() {
 
             Button(
                 modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(
+                    horizontal = 10.dp,
+                    vertical = 4.dp
+                ),
                 enabled = selectedDeviceType != null,
                 onClick = { showEditDeviceTypeDialog = true }
             ) {
-                Text("Editar Tipo")
+                Text("Editar Tipo",
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Clip
+                )
             }
 
             Button(
                 modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(
+                    horizontal = 10.dp,
+                    vertical = 4.dp
+                ),
                 enabled = selectedDeviceType != null,
                 onClick = { showDeleteDeviceTypeConfirm = true }
             ) {
-                Text("Eliminar Tipo")
+                Text("Eliminar Tipo",
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Clip
+                )
             }
-        }
-
-        if (showAddDeviceTypeDialog) {
-            DeviceTypeDialog(
-                title = "Agregar tipo de dispositivo",
-                onConfirm = { name ->
-                    repository.addDeviceType(name)
-
-                    // 🔁 refrescar lista
-                    deviceTypes = repository.getAllDeviceTypes()
-
-                    showAddDeviceTypeDialog = false
-                },
-                onDismiss = {
-                    showAddDeviceTypeDialog = false
-                }
-            )
         }
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -364,9 +391,12 @@ fun AdminScreen() {
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-
             Button(
                 modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(
+                    horizontal = 10.dp,
+                    vertical = 4.dp
+                ),
                 enabled = selectedBranch != null,
                 onClick = {
                     if (deviceTypes.isEmpty()) {
@@ -380,70 +410,51 @@ fun AdminScreen() {
                     }
                 }
             ) {
-                Text("Agregar Device")
+                Text("Agregar Device",
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Clip
+                )
             }
-
-
             Button(
                 modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(
+                    horizontal = 10.dp,
+                    vertical = 4.dp
+                ),
                 enabled = selectedDevice != null,
                 onClick = {
                     showEditDeviceDialog = true
                 }
             ) {
-                Text("Editar Device")
+                Text("Editar Device",
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Clip
+                )
             }
-
             Button(
                 modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(
+                    horizontal = 10.dp,
+                    vertical = 4.dp
+                ),
                 enabled = selectedDevice != null,
                 onClick = {
-                    repository.deleteDevice(selectedDevice!!.id)
-                    devices = repository.getDevicesByBranch(selectedBranch!!.id)
-                    selectedDevice = null
+                    showDeleteDeviceConfirm = true
                 }
-            ) { Text("Eliminar Device") }
+            ) {
+                Text(
+                    "Eliminar Device",
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Clip
+                )
+            }
         }
-
-        if (showAddDeviceDialog && selectedBranch != null) {
-            DeviceDialog(
-                title = "Agregar dispositivo",
-                deviceTypes = deviceTypes,
-                onConfirm = { name, ip, typeId ->
-                    repository.addDevice(
-                        branchId = selectedBranch!!.id,
-                        name = name,
-                        ip = ip,
-                        typeId = typeId
-                    )
-                    devices = repository.getDevicesByBranch(selectedBranch!!.id)
-                    showAddDeviceDialog = false
-                },
-                onDismiss = { showAddDeviceDialog = false }
-            )
-        }
-
-        if (showEditDeviceDialog && selectedDevice != null) {
-            DeviceDialog(
-                title = "Editar dispositivo",
-                device = selectedDevice,
-                deviceTypes = deviceTypes,
-                onConfirm = { name, ip, typeId ->
-                    repository.updateDevice(
-                        deviceId = selectedDevice!!.id,
-                        name = name,
-                        ip = ip,
-                        typeId = typeId
-                    )
-                    devices = repository.getDevicesByBranch(selectedBranch!!.id)
-                    showEditDeviceDialog = false
-                    selectedDevice = null
-                },
-                onDismiss = { showEditDeviceDialog = false }
-            )
-        }
-
-
 
         Spacer(modifier = Modifier.height(12.dp))
 
@@ -451,37 +462,191 @@ fun AdminScreen() {
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-
             Button(
                 modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(
+                    horizontal = 10.dp,
+                    vertical = 4.dp
+                ),
                 onClick = {
                     showAddBranchDialog = true
                 }
             ) {
-                Text("Agregar")
+                Text("Agregar sucursal",
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Clip
+                )
             }
-
             Button(
                 modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(
+                    horizontal = 10.dp,
+                    vertical = 4.dp
+                ),
                 enabled = selectedBranch != null,
                 onClick = {
                     showEditBranchDialog = true
                 }
             ) {
-                Text("Editar")
+                Text("Editar sucursal",
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Clip
+                )
             }
-
-
             Button(
                 modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(
+                    horizontal = 10.dp,
+                    vertical = 4.dp
+                ),
                 enabled = selectedBranch != null,
                 onClick = {
                     showConfirmDelete = true
                 }
             ) {
-                Text("Eliminar")
+                Text("Eliminar sucursal",
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Clip
+                )
             }
         }
+
+    }
+
+    // ─────────────────────────────────────────
+    // DIALOGS
+    // ─────────────────────────────────────────
+    if (showAddDeviceTypeDialog) {
+        DeviceTypeDialog(
+            title = "Agregar tipo de dispositivo",
+            onConfirm = { name ->
+                repository.addDeviceType(name)
+
+                // 🔁 refrescar lista
+                deviceTypes = repository.getAllDeviceTypes()
+
+                showAddDeviceTypeDialog = false
+            },
+            onDismiss = {
+                showAddDeviceTypeDialog = false
+            }
+        )
+    }
+
+    if (showEditDeviceTypeDialog && selectedDeviceType != null) {
+        DeviceTypeDialog(
+            title = "Editar tipo de dispositivo",
+            initialName = selectedDeviceType!!.name,
+            onConfirm = { newName ->
+                repository.updateDeviceType(
+                    id = selectedDeviceType!!.id,
+                    name = newName
+                )
+
+                // 🔁 refrescar lista
+                deviceTypes = repository.getAllDeviceTypes()
+
+                showEditDeviceTypeDialog = false
+                selectedDeviceType = null
+            },
+            onDismiss = {
+                showEditDeviceTypeDialog = false
+            }
+        )
+    }
+
+    if (showDeleteDeviceTypeConfirm && selectedDeviceType != null) {
+
+        val context = LocalContext.current
+
+        ConfirmDialog(
+            message = "¿Eliminar el tipo de dispositivo '${selectedDeviceType!!.name}'?",
+            onConfirm = {
+
+                val deleted = repository.deleteDeviceType(selectedDeviceType!!.id)
+
+                if (!deleted) {
+                    Toast.makeText(
+                        context,
+                        "No se puede eliminar: hay dispositivos usando este tipo",
+                        Toast.LENGTH_LONG
+                    ).show()
+                } else {
+                    // 🔁 refrescar lista SOLO si se eliminó
+                    deviceTypes = repository.getAllDeviceTypes()
+                    selectedDeviceType = null
+                }
+
+                // cerrar diálogo siempre
+                showDeleteDeviceTypeConfirm = false
+            },
+            onCancel = {
+                showDeleteDeviceTypeConfirm = false
+            }
+        )
+    }
+
+
+    if (showAddDeviceDialog && selectedBranch != null) {
+        DeviceDialog(
+            title = "Agregar dispositivo",
+            deviceTypes = deviceTypes,
+            onConfirm = { name, ip, typeId ->
+                repository.addDevice(
+                    branchId = selectedBranch!!.id,
+                    name = name,
+                    ip = ip,
+                    typeId = typeId
+                )
+                devices = repository.getDevicesByBranch(selectedBranch!!.id)
+                showAddDeviceDialog = false
+            },
+            onDismiss = { showAddDeviceDialog = false }
+        )
+    }
+
+    if (showEditDeviceDialog && selectedDevice != null) {
+        DeviceDialog(
+            title = "Editar dispositivo",
+            device = selectedDevice,
+            deviceTypes = deviceTypes,
+            onConfirm = { name, ip, typeId ->
+                repository.updateDevice(
+                    deviceId = selectedDevice!!.id,
+                    name = name,
+                    ip = ip,
+                    typeId = typeId
+                )
+                devices = repository.getDevicesByBranch(selectedBranch!!.id)
+                showEditDeviceDialog = false
+                selectedDevice = null
+            },
+            onDismiss = { showEditDeviceDialog = false }
+        )
+    }
+
+    if (showDeleteDeviceConfirm && selectedDevice != null) {
+        ConfirmDialog(
+            message = "¿Eliminar el dispositivo '${selectedDevice!!.name}'?",
+            onConfirm = {
+                repository.deleteDevice(selectedDevice!!.id)
+
+                // 🔁 refrescar lista
+                devices = repository.getDevicesByBranch(selectedBranch!!.id)
+
+                selectedDevice = null
+                showDeleteDeviceConfirm = false
+            },
+            onCancel = {
+                showDeleteDeviceConfirm = false
+            }
+        )
     }
 
     if (showAddBranchDialog) {
@@ -526,3 +691,10 @@ fun AdminScreen() {
         )
     }
 }
+
+
+
+
+
+
+

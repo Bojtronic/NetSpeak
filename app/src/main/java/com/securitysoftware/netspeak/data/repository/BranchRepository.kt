@@ -285,15 +285,55 @@ class BranchRepository(context: Context) {
         )
     }
 
-    fun deleteDeviceType(id: Int) {
+    fun deleteDeviceType(id: Int): Boolean {
         val db = dbHelper.writableDatabase
+
+        // Verificar si hay dispositivos usando este tipo
+        val cursor = db.rawQuery(
+            """
+        SELECT COUNT(*) 
+        FROM ${DbContract.DeviceTable.TABLE}
+        WHERE ${DbContract.DeviceTable.TYPE_ID} = ?
+        """,
+            arrayOf(id.toString())
+        )
+
+        cursor.moveToFirst()
+        val count = cursor.getInt(0)
+        cursor.close()
+
+        if (count > 0) {
+            return false // ❌ no se puede eliminar
+        }
+
+        // ✅ eliminar
         db.delete(
             DbContract.DeviceTypeTable.TABLE,
             "${DbContract.DeviceTypeTable.ID} = ?",
             arrayOf(id.toString())
         )
+
+        return true
     }
 
 
+    fun isDeviceTypeInUse(typeId: Int): Boolean {
+        val db = dbHelper.readableDatabase
+
+        val cursor = db.rawQuery(
+            """
+        SELECT COUNT(*) 
+        FROM ${DbContract.DeviceTable.TABLE}
+        WHERE ${DbContract.DeviceTable.TYPE_ID} = ?
+        """.trimIndent(),
+            arrayOf(typeId.toString())
+        )
+
+        cursor.moveToFirst()
+        val count = cursor.getInt(0)
+        cursor.close()
+
+        return count > 0
+    }
 
 }
