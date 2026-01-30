@@ -32,6 +32,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import com.securitysoftware.netspeak.data.repository.BranchRepository
 import com.securitysoftware.netspeak.login.LoginActivity
+import com.securitysoftware.netspeak.sound.MicSoundPlayer
 import com.securitysoftware.netspeak.speech.TextToSpeechManager
 
 
@@ -145,6 +146,10 @@ fun NetSpeakMainScreen() {
         )
     }
 
+    val micSoundPlayer = remember {
+        MicSoundPlayer(context)
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -222,9 +227,11 @@ fun NetSpeakMainScreen() {
                     }
                     .pointerInteropFilter { event ->
                         when (event.action) {
+
                             MotionEvent.ACTION_DOWN -> {
                                 isListening = true
                                 networkResult = "Escuchando..."
+                                micSoundPlayer.playMicOn()
                                 speechManager.startListening()
                                 true
                             }
@@ -232,6 +239,7 @@ fun NetSpeakMainScreen() {
                             MotionEvent.ACTION_UP,
                             MotionEvent.ACTION_CANCEL -> {
                                 isListening = false
+                                micSoundPlayer.playMicOff()
                                 speechManager.stopListening()
                                 true
                             }
@@ -239,8 +247,11 @@ fun NetSpeakMainScreen() {
                             else -> false
                         }
                     },
-                containerColor = if (isListening) Color.Red else MaterialTheme.colorScheme.primary,
-                onClick = {}
+                containerColor = if (isListening)
+                    Color.Red
+                else
+                    MaterialTheme.colorScheme.primary,
+                onClick = {} // obligatorio pero vacío
             ) {
                 Icon(
                     imageVector = Icons.Default.Mic,
@@ -250,7 +261,6 @@ fun NetSpeakMainScreen() {
                 )
             }
 
-
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
@@ -259,6 +269,7 @@ fun NetSpeakMainScreen() {
         onDispose {
             speechManager.destroy()
             ttsManager.shutdown()
+            micSoundPlayer.release()
         }
     }
 
