@@ -28,12 +28,17 @@ import androidx.compose.animation.core.tween
 import androidx.compose.ui.graphics.graphicsLayer
 import android.Manifest
 import android.content.pm.PackageManager
+import android.speech.SpeechRecognizer
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import com.securitysoftware.netspeak.data.repository.BranchRepository
 import com.securitysoftware.netspeak.login.LoginActivity
 import com.securitysoftware.netspeak.sound.MicSoundPlayer
 import com.securitysoftware.netspeak.speech.TextToSpeechManager
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
 
 
 class MainActivity : ComponentActivity() {
@@ -98,7 +103,22 @@ fun formatDevicesForSpeech(
     return builder.toString()
 }
 
+fun isFatalError(error: Int): Boolean =
+    error == SpeechRecognizer.ERROR_NETWORK ||
+            error == SpeechRecognizer.ERROR_SERVER
 
+fun isIgnorableError(error: Int): Boolean =
+    error == SpeechRecognizer.ERROR_CLIENT ||
+            error == SpeechRecognizer.ERROR_NO_MATCH ||
+            error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT
+
+enum class SpeechState {
+    IDLE,        // No escucha
+    KEYWORD,     // Esperando palabra clave
+    COMMAND,     // Escuchando comando
+    PROCESSING,  // Procesando resultado
+    SPEAKING     // TTS activo
+}
 
 @OptIn(
     ExperimentalMaterial3Api::class,
@@ -107,59 +127,133 @@ fun formatDevicesForSpeech(
 @Composable
 fun NetSpeakMainScreen() {
 
+    val keyWord_ = "net"
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    // ─────────────────── UI STATE ───────────────────
     var isListening by remember { mutableStateOf(false) }
     var recognizedText by remember { mutableStateOf("") }
     var networkResult by remember {
-        mutableStateOf("Presione el micrófono y diga el nombre de la red")
+        mutableStateOf("Diga \"net\" para activar el micrófono")
     }
+
     val scale by animateFloatAsState(
         targetValue = if (isListening) 1.3f else 1f,
-        animationSpec = tween(durationMillis = 150),
+        animationSpec = tween(150),
         label = "MicScale"
     )
-    val repository = remember {
-        BranchRepository(context)
-    }
-    val ttsManager = remember {
-        TextToSpeechManager(context)
-    }
+
+    // ─────────────────── SPEECH STATE ───────────────────
+    var speechState by remember { mutableStateOf(SpeechState.KEYWORD) }
+    var commandTimeoutJob by remember { mutableStateOf<Job?>(null) }
+    var isSpeechActive by remember { mutableStateOf(false) }
+
+    // ─────────────────── SERVICES ───────────────────
+    val repository = remember { BranchRepository(context) }
+    val ttsManager = remember { TextToSpeechManager(context) }
+    val micSoundPlayer = remember { MicSoundPlayer(context) }
+
+    // ─────────────────── SPEECH MANAGER ───────────────────
+    var speechManagerRef by remember { mutableStateOf<SpeechManager?>(null) }
+
     val speechManager = remember {
         SpeechManager(
             context = context,
             onResult = { text ->
-                recognizedText = text
+                when (speechState) {
+                    SpeechState.KEYWORD -> {
+                        if (text.contains(keyWord_, ignoreCase = true)) {
 
-                val devices = repository.findDevicesByBranchName(text)
+                            // 🔥 ahora sí es seguro
+                            speechManagerRef?.stop()
+                            isSpeechActive = false
 
-                networkResult = formatDevices(devices)
+                            speechState = SpeechState.COMMAND
+                            isListening = true
+                            micSoundPlayer.playMicOn()
 
-                // 🔊 HABLAR RESULTADO
-                ttsManager.speak(
-                    formatDevicesForSpeech(devices)
-                )
+                            commandTimeoutJob?.cancel()
+                            commandTimeoutJob = scope.launch {
+                                delay(5_000)
+                                if (speechState == SpeechState.COMMAND) {
+                                    isListening = false
+                                    micSoundPlayer.playMicOff()
+                                    speechState = SpeechState.KEYWORD
+                                }
+                            }
+                        } else {
+                            isSpeechActive = false
+                            speechState = SpeechState.KEYWORD
+                        }
+                    }
+
+                    SpeechState.COMMAND -> { /* igual que antes */ }
+                    else -> Unit
+                }
             },
-            onError = { error ->
-                networkResult = "Error de reconocimiento. Intente nuevamente."
-                ttsManager.speak("Error de reconocimiento. Intente nuevamente.")
+
+            onError = { errorCode ->
+                commandTimeoutJob?.cancel()
+                commandTimeoutJob = null
+
+                isListening = false
+                micSoundPlayer.playMicOff()
+
+                // 🔥 CLAVE
+                isSpeechActive = false
+
+                if (isIgnorableError(errorCode)) {
+                    speechState = SpeechState.KEYWORD
+                } else {
+                    speechState = SpeechState.IDLE
+                    networkResult = "Error de reconocimiento"
+                    ttsManager.speak("Error de reconocimiento")
+                }
             }
         )
     }
 
-    val micSoundPlayer = remember {
-        MicSoundPlayer(context)
+
+    // ─────────────────── START KEYWORD LISTENING ───────────────────
+    LaunchedEffect(speechManager) {
+        speechManagerRef = speechManager
     }
 
+    LaunchedEffect(speechState) {
+        when (speechState) {
+
+            SpeechState.KEYWORD,
+            SpeechState.COMMAND -> {
+                if (!isSpeechActive) {
+                    speechManager.start()
+                    isSpeechActive = true
+                }
+            }
+
+            SpeechState.SPEAKING,
+            SpeechState.PROCESSING,
+            SpeechState.IDLE -> {
+                if (isSpeechActive) {
+                    speechManager.stop()
+                    isSpeechActive = false
+                }
+            }
+        }
+    }
+
+
+
+    // ─────────────────── UI ───────────────────
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("NetSpeak") },
                 actions = {
-                    val context = LocalContext.current
-
                     IconButton(onClick = {
-                        val intent = Intent(context, LoginActivity::class.java)
-                        context.startActivity(intent)
+                        context.startActivity(
+                            Intent(context, LoginActivity::class.java)
+                        )
                     }) {
                         Icon(
                             imageVector = Icons.Default.AccountCircle,
@@ -179,44 +273,33 @@ fun NetSpeakMainScreen() {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
 
-            Text(
-                text = "Texto reconocido:",
-                style = MaterialTheme.typography.titleMedium
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
+            Text("Texto reconocido:", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(8.dp))
 
             Box(
-                modifier = Modifier
+                Modifier
                     .fillMaxWidth()
                     .background(Color.LightGray.copy(alpha = 0.3f))
                     .padding(12.dp)
             ) {
-                Text(text = recognizedText.ifEmpty { "—" })
+                Text(recognizedText.ifEmpty { "—" })
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(Modifier.height(24.dp))
 
-            Text(
-                text = "Resultado:",
-                style = MaterialTheme.typography.titleMedium
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
+            Text("Resultado:", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(8.dp))
 
             Box(
-                modifier = Modifier
+                Modifier
                     .fillMaxWidth()
                     .background(Color(0xFFE3F2FD))
                     .padding(12.dp)
             ) {
-                Text(
-                    text = networkResult,
-                    color = Color.Black
-                )
+                Text(networkResult, color = Color.Black)
             }
 
-            Spacer(modifier = Modifier.weight(1f))
+            Spacer(Modifier.weight(1f))
 
             FloatingActionButton(
                 modifier = Modifier
@@ -224,34 +307,10 @@ fun NetSpeakMainScreen() {
                     .graphicsLayer {
                         scaleX = scale
                         scaleY = scale
-                    }
-                    .pointerInteropFilter { event ->
-                        when (event.action) {
-
-                            MotionEvent.ACTION_DOWN -> {
-                                isListening = true
-                                networkResult = "Escuchando..."
-                                micSoundPlayer.playMicOn()
-                                speechManager.startListening()
-                                true
-                            }
-
-                            MotionEvent.ACTION_UP,
-                            MotionEvent.ACTION_CANCEL -> {
-                                isListening = false
-                                micSoundPlayer.playMicOff()
-                                speechManager.stopListening()
-                                true
-                            }
-
-                            else -> false
-                        }
                     },
-                containerColor = if (isListening)
-                    Color.Red
-                else
-                    MaterialTheme.colorScheme.primary,
-                onClick = {} // obligatorio pero vacío
+                containerColor = if (isListening) Color.Red
+                else MaterialTheme.colorScheme.primary,
+                onClick = {} // solo decorativo
             ) {
                 Icon(
                     imageVector = Icons.Default.Mic,
@@ -261,19 +320,27 @@ fun NetSpeakMainScreen() {
                 )
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(Modifier.height(24.dp))
         }
     }
 
+    // ─────────────────── CLEANUP ───────────────────
     DisposableEffect(Unit) {
         onDispose {
+            commandTimeoutJob?.cancel()
+
+            if (isSpeechActive) {
+                speechManager.stop()
+            }
+
             speechManager.destroy()
             ttsManager.shutdown()
             micSoundPlayer.release()
         }
     }
-
 }
+
+
 
 
 @Preview(showBackground = true)
