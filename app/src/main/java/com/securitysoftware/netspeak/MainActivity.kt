@@ -19,8 +19,6 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import com.securitysoftware.netspeak.ui.theme.NetSpeakTheme
-import android.view.MotionEvent
-import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.ExperimentalComposeUiApi
 import com.securitysoftware.netspeak.speech.SpeechManager
 import androidx.compose.animation.core.animateFloatAsState
@@ -28,18 +26,23 @@ import androidx.compose.animation.core.tween
 import androidx.compose.ui.graphics.graphicsLayer
 import android.Manifest
 import android.content.pm.PackageManager
-import android.speech.SpeechRecognizer
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.core.content.ContextCompat
 import com.securitysoftware.netspeak.data.repository.BranchRepository
 import com.securitysoftware.netspeak.login.LoginActivity
 import com.securitysoftware.netspeak.sound.MicSoundPlayer
 import com.securitysoftware.netspeak.speech.TextToSpeechManager
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import androidx.compose.material.icons.filled.Hearing
+import androidx.compose.material.icons.filled.RecordVoiceOver
 
 
+enum class ListeningState {
+    NONE,
+    LISTENING_HOTWORD,
+    HOTWORD_DETECTED,
+    LISTENING_COMMAND
+}
 
 class MainActivity : ComponentActivity() {
 
@@ -49,7 +52,6 @@ class MainActivity : ComponentActivity() {
                 println("Permiso de micrófono denegado")
             }
         }
-
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -69,8 +71,6 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
-
-
 }
 
 fun formatDevices(devices: List<com.securitysoftware.netspeak.data.model.Device>): String {
@@ -103,23 +103,6 @@ fun formatDevicesForSpeech(
     return builder.toString()
 }
 
-fun isFatalError(error: Int): Boolean =
-    error == SpeechRecognizer.ERROR_NETWORK ||
-            error == SpeechRecognizer.ERROR_SERVER
-
-fun isIgnorableError(error: Int): Boolean =
-    error == SpeechRecognizer.ERROR_CLIENT ||
-            error == SpeechRecognizer.ERROR_NO_MATCH ||
-            error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT
-
-enum class SpeechState {
-    IDLE,        // No escucha
-    KEYWORD,     // Esperando palabra clave
-    COMMAND,     // Escuchando comando
-    PROCESSING,  // Procesando resultado
-    SPEAKING     // TTS activo
-}
-
 @OptIn(
     ExperimentalMaterial3Api::class,
     ExperimentalComposeUiApi::class
@@ -127,124 +110,73 @@ enum class SpeechState {
 @Composable
 fun NetSpeakMainScreen() {
 
-    val keyWord_ = "net"
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
 
-    // ─────────────────── UI STATE ───────────────────
-    var isListening by remember { mutableStateOf(false) }
+    // ─────────────── UI STATE ───────────────
+    var listeningState by remember {
+        mutableStateOf(ListeningState.LISTENING_HOTWORD)
+    }
+
     var recognizedText by remember { mutableStateOf("") }
     var networkResult by remember {
         mutableStateOf("Diga \"net\" para activar el micrófono")
     }
 
     val scale by animateFloatAsState(
-        targetValue = if (isListening) 1.3f else 1f,
+        targetValue = if (listeningState != ListeningState.NONE) 1.3f else 1f,
         animationSpec = tween(150),
         label = "MicScale"
     )
 
-    // ─────────────────── SPEECH STATE ───────────────────
-    var speechState by remember { mutableStateOf(SpeechState.KEYWORD) }
-    var commandTimeoutJob by remember { mutableStateOf<Job?>(null) }
-    var isSpeechActive by remember { mutableStateOf(false) }
-
-    // ─────────────────── SERVICES ───────────────────
+    // ─────────────── SERVICES ───────────────
     val repository = remember { BranchRepository(context) }
     val ttsManager = remember { TextToSpeechManager(context) }
     val micSoundPlayer = remember { MicSoundPlayer(context) }
 
-    // ─────────────────── SPEECH MANAGER ───────────────────
-    var speechManagerRef by remember { mutableStateOf<SpeechManager?>(null) }
-
+    // ─────────────── SPEECH MANAGER ───────────────
     val speechManager = remember {
         SpeechManager(
             context = context,
-            onResult = { text ->
-                when (speechState) {
-                    SpeechState.KEYWORD -> {
-                        if (text.contains(keyWord_, ignoreCase = true)) {
 
-                            // 🔥 ahora sí es seguro
-                            speechManagerRef?.stop()
-                            isSpeechActive = false
-
-                            speechState = SpeechState.COMMAND
-                            isListening = true
-                            micSoundPlayer.playMicOn()
-
-                            commandTimeoutJob?.cancel()
-                            commandTimeoutJob = scope.launch {
-                                delay(5_000)
-                                if (speechState == SpeechState.COMMAND) {
-                                    isListening = false
-                                    micSoundPlayer.playMicOff()
-                                    speechState = SpeechState.KEYWORD
-                                }
-                            }
-                        } else {
-                            isSpeechActive = false
-                            speechState = SpeechState.KEYWORD
-                        }
-                    }
-
-                    SpeechState.COMMAND -> { /* igual que antes */ }
-                    else -> Unit
-                }
-            },
-
-            onError = { errorCode ->
-                commandTimeoutJob?.cancel()
-                commandTimeoutJob = null
-
-                isListening = false
+            onCommandDetected = { text ->
+                // Aquí sabemos que ya pasó hotword + comando
+                listeningState = ListeningState.NONE
                 micSoundPlayer.playMicOff()
 
-                // 🔥 CLAVE
-                isSpeechActive = false
+                recognizedText = text
 
-                if (isIgnorableError(errorCode)) {
-                    speechState = SpeechState.KEYWORD
-                } else {
-                    speechState = SpeechState.IDLE
-                    networkResult = "Error de reconocimiento"
-                    ttsManager.speak("Error de reconocimiento")
-                }
+                val devices = repository.findDevicesByBranchName(text)
+                networkResult = formatDevices(devices)
+
+                ttsManager.speak(
+                    formatDevicesForSpeech(devices),
+                    onDone = {
+                        listeningState = ListeningState.LISTENING_HOTWORD
+                    }
+                )
+            },
+
+            onError = {
+                listeningState = ListeningState.LISTENING_HOTWORD
             }
         )
     }
 
 
-    // ─────────────────── START KEYWORD LISTENING ───────────────────
-    LaunchedEffect(speechManager) {
-        speechManagerRef = speechManager
+    // ─────────────── LIFECYCLE ───────────────
+    LaunchedEffect(Unit) {
+        speechManager.start()
     }
 
-    LaunchedEffect(speechState) {
-        when (speechState) {
-
-            SpeechState.KEYWORD,
-            SpeechState.COMMAND -> {
-                if (!isSpeechActive) {
-                    speechManager.start()
-                    isSpeechActive = true
-                }
-            }
-
-            SpeechState.SPEAKING,
-            SpeechState.PROCESSING,
-            SpeechState.IDLE -> {
-                if (isSpeechActive) {
-                    speechManager.stop()
-                    isSpeechActive = false
-                }
-            }
+    DisposableEffect(Unit) {
+        onDispose {
+            speechManager.destroy()
+            ttsManager.shutdown()
+            micSoundPlayer.release()
         }
     }
 
-
-
-    // ─────────────────── UI ───────────────────
+    // ─────────────── UI ───────────────
     Scaffold(
         topBar = {
             TopAppBar(
@@ -301,45 +233,55 @@ fun NetSpeakMainScreen() {
 
             Spacer(Modifier.weight(1f))
 
-            FloatingActionButton(
-                modifier = Modifier
-                    .size(72.dp)
-                    .graphicsLayer {
-                        scaleX = scale
-                        scaleY = scale
-                    },
-                containerColor = if (isListening) Color.Red
-                else MaterialTheme.colorScheme.primary,
-                onClick = {} // solo decorativo
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Mic,
-                    contentDescription = "Micrófono",
-                    modifier = Modifier.size(36.dp),
-                    tint = Color.White
-                )
+            // ───────── ICONO ÚNICO SEGÚN ESTADO ─────────
+            when (listeningState) {
+
+                ListeningState.LISTENING_HOTWORD -> {
+                    StateIcon(Icons.Default.Mic, scale, Color.Blue)
+                }
+
+                ListeningState.HOTWORD_DETECTED -> {
+                    StateIcon(Icons.Default.Hearing, scale, Color.Green)
+                }
+
+                ListeningState.LISTENING_COMMAND -> {
+                    StateIcon(Icons.Default.RecordVoiceOver, scale, Color.Red)
+                }
+
+                ListeningState.NONE -> {
+                    // No icono → estado inválido / pausa
+                }
             }
 
             Spacer(Modifier.height(24.dp))
         }
     }
-
-    // ─────────────────── CLEANUP ───────────────────
-    DisposableEffect(Unit) {
-        onDispose {
-            commandTimeoutJob?.cancel()
-
-            if (isSpeechActive) {
-                speechManager.stop()
-            }
-
-            speechManager.destroy()
-            ttsManager.shutdown()
-            micSoundPlayer.release()
-        }
-    }
 }
 
+@Composable
+private fun StateIcon(
+    icon: ImageVector,
+    scale: Float,
+    color: Color
+) {
+    FloatingActionButton(
+        modifier = Modifier
+            .size(72.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            },
+        containerColor = color,
+        onClick = {}
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(36.dp),
+            tint = Color.White
+        )
+    }
+}
 
 
 
