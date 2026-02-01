@@ -40,10 +40,10 @@ import com.securitysoftware.netspeak.data.model.Device
 
 
 enum class ListeningState {
-    NONE,
-    LISTENING_HOTWORD,
-    HOTWORD_DETECTED,
-    LISTENING_COMMAND
+    IDLE,                 // Nada activo
+    LISTENING_HOTWORD,    // Mic escuchando "net"
+    LISTENING_COMMAND,    // Oreja escuchando sucursal
+    SPEAKING              // TTS activo
 }
 
 class MainActivity : ComponentActivity() {
@@ -128,7 +128,7 @@ fun NetSpeakMainScreen() {
 
     // ─────────────── UI STATE ───────────────
     var listeningState by remember {
-        mutableStateOf(ListeningState.LISTENING_HOTWORD)
+        mutableStateOf(ListeningState.IDLE)
     }
 
     var recognizedText by remember { mutableStateOf("") }
@@ -137,9 +137,9 @@ fun NetSpeakMainScreen() {
     }
 
     val scale by animateFloatAsState(
-        targetValue = if (listeningState != ListeningState.NONE) 1.3f else 1f,
+        targetValue = if (listeningState != ListeningState.IDLE) 1.3f else 1f,
         animationSpec = tween(150),
-        label = "MicScale"
+        label = "StateIconScale"
     )
 
     // ─────────────── SERVICES ───────────────
@@ -152,52 +152,51 @@ fun NetSpeakMainScreen() {
         SpeechManager(
             context = context,
 
-            // 🎤 Detectando "net"
+            // 🎤 Hotword detectada (AÚN NO escucha comando)
             onHotwordDetected = {
-                listeningState = ListeningState.HOTWORD_DETECTED
                 micSoundPlayer.playMicOn()
+                // ❌ NO cambiamos estado visual aquí
             },
 
-            // 🗣️ Escuchando comando
+            // 👂 SpeechRecognizer realmente empieza a escuchar comando
             onCommandListeningStarted = {
                 listeningState = ListeningState.LISTENING_COMMAND
             },
 
-            // ✅ Comando final reconocido
+            // ✅ Comando reconocido
             onCommandDetected = { text ->
-                listeningState = ListeningState.NONE
+                listeningState = ListeningState.SPEAKING
                 micSoundPlayer.playMicOff()
-
-                recognizedText = text
 
                 val result = repository.findBranchWithDevicesBySpokenText(text)
 
                 if (result == null) {
-                    networkResult = "No se encontró información para esa sucursal."
-                    ttsManager.speak("No se encontró información para esa sucursal.")
+                    listeningState = ListeningState.SPEAKING
+
+                    recognizedText = text
+                    networkResult = "No se encontró información para la sucursal $recognizedText. Por favor, intente nuevamente"
+                    ttsManager.speak(
+                        "No se encontró información para la sucursal $recognizedText. Por favor, intente nuevamente",
+                        onDone = {
+                            listeningState = ListeningState.LISTENING_HOTWORD
+                        }
+                    )
                     return@SpeechManager
                 }
 
-
                 recognizedText = result.branch.name
+                networkResult = formatDevices(result.branch, result.devices)
 
-                networkResult = formatDevices(
-                    result.branch,
-                    result.devices
-                )
-
+                listeningState = ListeningState.SPEAKING
                 ttsManager.speak(
-                    formatDevicesForSpeech(
-                        result.branch,
-                        result.devices
-                    ),
+                    formatDevicesForSpeech(result.branch, result.devices),
                     onDone = {
                         listeningState = ListeningState.LISTENING_HOTWORD
                     }
                 )
             },
 
-            // ❌ Error real (no silencios)
+            // ❌ Error real
             onError = {
                 listeningState = ListeningState.LISTENING_HOTWORD
             }
@@ -208,6 +207,7 @@ fun NetSpeakMainScreen() {
 
     // ─────────────── LIFECYCLE ───────────────
     LaunchedEffect(Unit) {
+        //listeningState = ListeningState.LISTENING_HOTWORD
         speechManager.start()
     }
 
@@ -283,16 +283,16 @@ fun NetSpeakMainScreen() {
                     StateIcon(Icons.Default.Mic, scale, Color.Blue)
                 }
 
-                ListeningState.HOTWORD_DETECTED -> {
+                ListeningState.LISTENING_COMMAND -> {
                     StateIcon(Icons.Default.Hearing, scale, Color.Green)
                 }
 
-                ListeningState.LISTENING_COMMAND -> {
+                ListeningState.SPEAKING -> {
                     StateIcon(Icons.Default.RecordVoiceOver, scale, Color.Red)
                 }
 
-                ListeningState.NONE -> {
-                    // No icono → estado inválido / pausa
+                ListeningState.IDLE -> {
+                    // Sin icono
                 }
             }
 

@@ -31,6 +31,15 @@ class SpeechManager(
     private val cooldownDurationMs = 20_000L
     private val wakeWord = "net"
 
+    private val wakeWordVariants = setOf(
+        "net",
+        "ne",
+        "met",
+        "nex",
+        "nec",
+        "nek"
+    )
+
     private val recognizerIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
         putExtra(
             RecognizerIntent.EXTRA_LANGUAGE_MODEL,
@@ -76,10 +85,22 @@ class SpeechManager(
         })
     }
 
+    private fun containsWakeWord(text: String): Boolean {
+        val words = text
+            .lowercase()
+            .split("\\s+".toRegex())
+
+        return words.any { word ->
+            word.length in 2..3 &&
+                    word.contains("e") &&
+                    word in wakeWordVariants
+        }
+    }
+
     // ─────────────── CORE LOGIC ───────────────
     private fun processText(text: String) {
         if (!wakeWordDetected) {
-            if (text.contains(wakeWord)) {
+            if (containsWakeWord(text)) {
                 wakeWordDetected = true
                 onHotwordDetected()
             }
