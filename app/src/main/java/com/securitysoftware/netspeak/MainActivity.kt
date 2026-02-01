@@ -35,6 +35,8 @@ import com.securitysoftware.netspeak.sound.MicSoundPlayer
 import com.securitysoftware.netspeak.speech.TextToSpeechManager
 import androidx.compose.material.icons.filled.Hearing
 import androidx.compose.material.icons.filled.RecordVoiceOver
+import com.securitysoftware.netspeak.data.model.Branch
+import com.securitysoftware.netspeak.data.model.Device
 
 
 enum class ListeningState {
@@ -73,12 +75,16 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-fun formatDevices(devices: List<com.securitysoftware.netspeak.data.model.Device>): String {
+fun formatDevices(
+    branch: Branch,
+    devices: List<Device>
+): String {
     if (devices.isEmpty()) {
-        return "No se encontró información para esa sucursal.\nIntente nuevamente."
+        return "No se encontró información para la sucursal ${branch.name}."
     }
 
     val builder = StringBuilder()
+    builder.append("Sucursal: ${branch.name}\n\n")
 
     devices.forEach { device ->
         builder.append("${device.name}: ${device.ip}\n")
@@ -87,21 +93,29 @@ fun formatDevices(devices: List<com.securitysoftware.netspeak.data.model.Device>
     return builder.toString()
 }
 
+
 fun formatDevicesForSpeech(
-    devices: List<com.securitysoftware.netspeak.data.model.Device>
+    branch: Branch,
+    devices: List<Device>
 ): String {
     if (devices.isEmpty()) {
-        return "No se encontró información para esa sucursal. Intente nuevamente."
+        return "No se encontró información para la sucursal ${branch.name}."
     }
 
     val builder = StringBuilder()
 
+    builder.append("Información de la sucursal ${branch.name}. ")
+
     devices.forEach { device ->
-        builder.append("${device.name}, dirección IP ${device.ip.replace(".", " punto ")}. ")
+        builder.append(
+            "${device.name}, dirección IP ${device.ip.replace(".", " punto ")}. "
+        )
     }
 
     return builder.toString()
 }
+
+
 
 @OptIn(
     ExperimentalMaterial3Api::class,
@@ -138,29 +152,58 @@ fun NetSpeakMainScreen() {
         SpeechManager(
             context = context,
 
+            // 🎤 Detectando "net"
+            onHotwordDetected = {
+                listeningState = ListeningState.HOTWORD_DETECTED
+                micSoundPlayer.playMicOn()
+            },
+
+            // 🗣️ Escuchando comando
+            onCommandListeningStarted = {
+                listeningState = ListeningState.LISTENING_COMMAND
+            },
+
+            // ✅ Comando final reconocido
             onCommandDetected = { text ->
-                // Aquí sabemos que ya pasó hotword + comando
                 listeningState = ListeningState.NONE
                 micSoundPlayer.playMicOff()
 
                 recognizedText = text
 
-                val devices = repository.findDevicesByBranchName(text)
-                networkResult = formatDevices(devices)
+                val result = repository.findBranchWithDevicesBySpokenText(text)
+
+                if (result == null) {
+                    networkResult = "No se encontró información para esa sucursal."
+                    ttsManager.speak("No se encontró información para esa sucursal.")
+                    return@SpeechManager
+                }
+
+
+                recognizedText = result.branch.name
+
+                networkResult = formatDevices(
+                    result.branch,
+                    result.devices
+                )
 
                 ttsManager.speak(
-                    formatDevicesForSpeech(devices),
+                    formatDevicesForSpeech(
+                        result.branch,
+                        result.devices
+                    ),
                     onDone = {
                         listeningState = ListeningState.LISTENING_HOTWORD
                     }
                 )
             },
 
+            // ❌ Error real (no silencios)
             onError = {
                 listeningState = ListeningState.LISTENING_HOTWORD
             }
         )
     }
+
 
 
     // ─────────────── LIFECYCLE ───────────────

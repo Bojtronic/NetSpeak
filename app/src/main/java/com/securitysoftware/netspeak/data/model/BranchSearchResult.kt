@@ -1,4 +1,6 @@
 package com.securitysoftware.netspeak.data.model
 
-class BranchSearchResult {
-}
+data class BranchSearchResult(
+    val branch: Branch,
+    val devices: List<Device>
+)

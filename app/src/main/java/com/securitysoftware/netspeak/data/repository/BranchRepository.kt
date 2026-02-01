@@ -5,6 +5,7 @@ import android.content.Context
 import com.securitysoftware.netspeak.data.db.DbContract
 import com.securitysoftware.netspeak.data.db.NetSpeakDatabase
 import com.securitysoftware.netspeak.data.model.Branch
+import com.securitysoftware.netspeak.data.model.BranchSearchResult
 import com.securitysoftware.netspeak.data.model.Device
 import com.securitysoftware.netspeak.data.model.DeviceType
 
@@ -314,6 +315,59 @@ class BranchRepository(context: Context) {
         )
 
         return true
+    }
+
+    fun findBranchWithDevicesBySpokenText(
+        spokenText: String
+    ): BranchSearchResult? {
+
+        val db = dbHelper.readableDatabase
+
+        val cursor = db.rawQuery(
+            """
+        SELECT b.${DbContract.BranchTable.ID},
+               b.${DbContract.BranchTable.NAME},
+               d.${DbContract.DeviceTable.NAME},
+               d.${DbContract.DeviceTable.IP},
+               t.${DbContract.DeviceTypeTable.NAME}
+        FROM ${DbContract.BranchTable.TABLE} b
+        JOIN ${DbContract.DeviceTable.TABLE} d
+          ON d.${DbContract.DeviceTable.BRANCH_ID} = b.${DbContract.BranchTable.ID}
+        JOIN ${DbContract.DeviceTypeTable.TABLE} t
+          ON d.${DbContract.DeviceTable.TYPE_ID} = t.${DbContract.DeviceTypeTable.ID}
+        WHERE LOWER(b.${DbContract.BranchTable.NAME}) LIKE LOWER(?)
+        """,
+            arrayOf("%$spokenText%")
+        )
+
+        var branch: Branch? = null
+        val devices = mutableListOf<Device>()
+
+        while (cursor.moveToNext()) {
+
+            if (branch == null) {
+                branch = Branch(
+                    id = cursor.getInt(0),
+                    name = cursor.getString(1)
+                )
+            }
+
+            devices.add(
+                Device(
+                    id = 0,
+                    branchId = branch.id,
+                    name = cursor.getString(2),
+                    ip = cursor.getString(3),
+                    type = cursor.getString(4)
+                )
+            )
+        }
+
+        cursor.close()
+
+        return branch?.let {
+            BranchSearchResult(it, devices)
+        }
     }
 
 
