@@ -107,7 +107,7 @@ class SpeechManager(
                 onStateChanged(ListeningState.LISTENING_COMMAND)
             }
         } else {
-            //onStateChanged(ListeningState.SPEAKING)
+            onStateChanged(ListeningState.SPEAKING) // 👈 AQUI
             onCommandDetected(text)
             wakeWordDetected = false
             startCooldown()

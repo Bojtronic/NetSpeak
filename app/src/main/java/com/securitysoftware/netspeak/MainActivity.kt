@@ -147,7 +147,7 @@ fun NetSpeakMainScreen() {
     ) {
         val result = repository.findBranchWithDevicesBySpokenText(text)
 
-        listeningState = ListeningState.SPEAKING
+        //listeningState = ListeningState.SPEAKING
         onSpeakingStarted()
 
         if (result == null) {
