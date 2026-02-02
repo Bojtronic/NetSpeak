@@ -8,10 +8,10 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 
+
 class SpeechManager(
     private val context: Context,
-    private val onHotwordDetected: () -> Unit,
-    private val onCommandListeningStarted: () -> Unit,
+    private val onStateChanged: (ListeningState) -> Unit,
     private val onCommandDetected: (String) -> Unit,
     private val onError: (String) -> Unit
 ) {
@@ -25,6 +25,8 @@ class SpeechManager(
     private var wakeWordDetected = false
     private var isListening = false
     private var isCoolingDown = false
+    private var isSpeaking = false
+
 
     // ─────────────── CONFIG ───────────────
     private val listenDurationMs = 5_000L
@@ -102,9 +104,10 @@ class SpeechManager(
         if (!wakeWordDetected) {
             if (containsWakeWord(text)) {
                 wakeWordDetected = true
-                onHotwordDetected()
+                onStateChanged(ListeningState.LISTENING_COMMAND)
             }
         } else {
+            //onStateChanged(ListeningState.SPEAKING)
             onCommandDetected(text)
             wakeWordDetected = false
             startCooldown()
@@ -114,11 +117,12 @@ class SpeechManager(
     // ─────────────── CYCLE CONTROL ───────────────
     fun start() {
         if (isListening) return
+        onStateChanged(ListeningState.LISTENING_HOTWORD)
         scheduleNextCycle()
     }
 
     private fun scheduleNextCycle() {
-        if (isCoolingDown) return
+        if (isCoolingDown || isSpeaking) return
 
         handler.postDelayed({
             startListeningInternal()
@@ -126,25 +130,18 @@ class SpeechManager(
     }
 
     private fun startListeningInternal() {
-        if (isListening || isCoolingDown) return
+        if (isListening || isCoolingDown || isSpeaking) return
 
-        try {
-            isListening = true
+        isListening = true
 
-            if (wakeWordDetected) {
-                onCommandListeningStarted()
-            }
+        onStateChanged(
+            if (wakeWordDetected)
+                ListeningState.LISTENING_COMMAND
+            else
+                ListeningState.LISTENING_HOTWORD
+        )
 
-            speechRecognizer.startListening(recognizerIntent)
-
-            handler.postDelayed({
-                stopListeningInternal()
-            }, listenDurationMs)
-
-        } catch (e: Exception) {
-            isListening = false
-            onError("Error iniciando reconocimiento: ${e.message}")
-        }
+        speechRecognizer.startListening(recognizerIntent)
     }
 
     private fun stopListeningInternal() {
@@ -171,22 +168,8 @@ class SpeechManager(
 
     // ─────────────── ERROR HANDLING ───────────────
     private fun handleSpeechError(error: Int) {
-        when (error) {
-            SpeechRecognizer.ERROR_NO_MATCH,
-            SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> {
-                // Silencio → ignorar
-            }
-
-            SpeechRecognizer.ERROR_NETWORK,
-            SpeechRecognizer.ERROR_SERVER,
-            SpeechRecognizer.ERROR_CLIENT -> {
-                onError("Error de reconocimiento ($error)")
-            }
-
-            else -> {
-                onError("Error desconocido ($error)")
-            }
-        }
+        onStateChanged(ListeningState.IDLE)
+        onError("Error de reconocimiento ($error)")
     }
 
     // ─────────────── CLEANUP ───────────────
@@ -194,4 +177,14 @@ class SpeechManager(
         handler.removeCallbacksAndMessages(null)
         speechRecognizer.destroy()
     }
+
+    fun onSpeakingStarted() {
+        isSpeaking = true
+    }
+
+    fun onSpeakingFinished() {
+        isSpeaking = false
+        scheduleNextCycle()
+    }
+
 }

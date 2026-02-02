@@ -37,14 +37,7 @@ import androidx.compose.material.icons.filled.Hearing
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import com.securitysoftware.netspeak.data.model.Branch
 import com.securitysoftware.netspeak.data.model.Device
-
-
-enum class ListeningState {
-    IDLE,                 // Nada activo
-    LISTENING_HOTWORD,    // Mic escuchando "net"
-    LISTENING_COMMAND,    // Oreja escuchando sucursal
-    SPEAKING              // TTS activo
-}
+import com.securitysoftware.netspeak.speech.ListeningState
 
 class MainActivity : ComponentActivity() {
 
@@ -116,7 +109,6 @@ fun formatDevicesForSpeech(
 }
 
 
-
 @OptIn(
     ExperimentalMaterial3Api::class,
     ExperimentalComposeUiApi::class
@@ -127,7 +119,7 @@ fun NetSpeakMainScreen() {
     val context = LocalContext.current
 
     // ─────────────── UI STATE ───────────────
-    var listeningState by remember {
+    var listeningState: com.securitysoftware.netspeak.speech.ListeningState by remember {
         mutableStateOf(ListeningState.IDLE)
     }
 
@@ -148,61 +140,76 @@ fun NetSpeakMainScreen() {
     val micSoundPlayer = remember { MicSoundPlayer(context) }
 
     // ─────────────── SPEECH MANAGER ───────────────
-    val speechManager = remember {
-        SpeechManager(
-            context = context,
+    fun handleCommand(
+        text: String,
+        onSpeakingStarted: () -> Unit,
+        onSpeakingFinished: () -> Unit
+    ) {
+        val result = repository.findBranchWithDevicesBySpokenText(text)
 
-            // 🎤 Hotword detectada (AÚN NO escucha comando)
-            onHotwordDetected = {
-                micSoundPlayer.playMicOn()
-                // ❌ NO cambiamos estado visual aquí
-            },
+        listeningState = ListeningState.SPEAKING
+        onSpeakingStarted()
 
-            // 👂 SpeechRecognizer realmente empieza a escuchar comando
-            onCommandListeningStarted = {
-                listeningState = ListeningState.LISTENING_COMMAND
-            },
+        if (result == null) {
+            recognizedText = text
+            networkResult =
+                "No se encontró información para la sucursal $text. Por favor, intente nuevamente"
 
-            // ✅ Comando reconocido
-            onCommandDetected = { text ->
-                listeningState = ListeningState.SPEAKING
-                micSoundPlayer.playMicOff()
-
-                val result = repository.findBranchWithDevicesBySpokenText(text)
-
-                if (result == null) {
-                    listeningState = ListeningState.SPEAKING
-
-                    recognizedText = text
-                    networkResult = "No se encontró información para la sucursal $recognizedText. Por favor, intente nuevamente"
-                    ttsManager.speak(
-                        "No se encontró información para la sucursal $recognizedText. Por favor, intente nuevamente",
-                        onDone = {
-                            listeningState = ListeningState.LISTENING_HOTWORD
-                        }
-                    )
-                    return@SpeechManager
+            ttsManager.speak(
+                networkResult,
+                onDone = {
+                    onSpeakingFinished()
+                    listeningState = ListeningState.LISTENING_HOTWORD
                 }
+            )
+            return
+        }
 
-                recognizedText = result.branch.name
-                networkResult = formatDevices(result.branch, result.devices)
+        recognizedText = result.branch.name
+        networkResult = formatDevices(result.branch, result.devices)
 
-                listeningState = ListeningState.SPEAKING
-                ttsManager.speak(
-                    formatDevicesForSpeech(result.branch, result.devices),
-                    onDone = {
-                        listeningState = ListeningState.LISTENING_HOTWORD
-                    }
-                )
-            },
-
-            // ❌ Error real
-            onError = {
+        ttsManager.speak(
+            formatDevicesForSpeech(result.branch, result.devices),
+            onDone = {
+                onSpeakingFinished()
                 listeningState = ListeningState.LISTENING_HOTWORD
             }
         )
     }
 
+
+    val speechManagerRef = remember { mutableStateOf<SpeechManager?>(null) }
+
+    val speechManager = remember {
+        SpeechManager(
+            context = context,
+
+            onStateChanged = { state ->
+                listeningState = state
+                when (state) {
+                    ListeningState.LISTENING_COMMAND -> micSoundPlayer.playMicOn()
+                    ListeningState.SPEAKING -> micSoundPlayer.playMicOff()
+                    else -> {}
+                }
+            },
+
+            onCommandDetected = { text ->
+                handleCommand(
+                    text = text,
+                    onSpeakingStarted = {
+                        speechManagerRef.value?.onSpeakingStarted()
+                    },
+                    onSpeakingFinished = {
+                        speechManagerRef.value?.onSpeakingFinished()
+                    }
+                )
+            },
+
+            onError = {}
+        )
+    }.also {
+        speechManagerRef.value = it
+    }
 
 
     // ─────────────── LIFECYCLE ───────────────
