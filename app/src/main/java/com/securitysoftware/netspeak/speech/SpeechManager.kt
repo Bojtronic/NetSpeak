@@ -112,7 +112,7 @@ class SpeechManager(
             wakeWordDetected = false
             startCooldown()
         }
-    }
+    } 
 
     // ─────────────── CYCLE CONTROL ───────────────
     fun start() {
